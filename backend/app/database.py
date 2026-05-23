@@ -8,11 +8,8 @@ from app.config import settings
 
 
 def _connect_args(url: str) -> dict:
-    # SQLite local support
     if "sqlite" in url:
         return {"check_same_thread": False}
-
-    # Neon + Render + asyncpg
     return {"ssl": True}
 
 
@@ -41,3 +38,8 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         except Exception:
             await session.rollback()
             raise
+
+
+def to_db_id(value) -> str:
+    """Normalise a UUID/str id to a plain string for SQLite compatibility."""
+    return str(value)

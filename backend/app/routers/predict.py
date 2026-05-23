@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user_id
-from app.database import get_db
+from app.database import get_db, to_db_id
 from app.models import Prediction, Report, Response, Session
 from app.schemas import PredictRequest, PredictResponse
 from app.services.ml_service import predict as ml_predict
@@ -23,13 +23,13 @@ async def run_prediction(
     features = dict(body.features)
 
     if body.session_id:
-        result = await db.execute(select(Session).where(Session.id == body.session_id))
+        result = await db.execute(select(Session).where(Session.id == to_db_id(body.session_id)))
         session = result.scalar_one_or_none()
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
         resp_result = await db.execute(
-            select(Response).where(Response.session_id == body.session_id)
+            select(Response).where(Response.session_id == to_db_id(body.session_id))
         )
         for r in resp_result.scalars().all():
             features[r.question_key] = r.answer_value
@@ -40,8 +40,9 @@ async def run_prediction(
 
     prediction_id = None
     if body.session_id:
+        sid = to_db_id(body.session_id)
         pred = Prediction(
-            session_id=body.session_id,
+            session_id=sid,
             has_gingivitis=prediction_result["has_gingivitis"],
             severity=prediction_result["severity"],
             severity_score=float(prediction_result.get("severity_score", 0)),
@@ -55,7 +56,7 @@ async def run_prediction(
         prediction_id = pred.id
 
         report = Report(
-            session_id=body.session_id,
+            session_id=sid,
             prediction_id=pred.id,
             summary=build_report_summary(prediction_result, features),
             recommendations={"items": prediction_result["recommendations"]},

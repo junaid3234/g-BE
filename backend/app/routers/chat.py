@@ -1,12 +1,11 @@
 from datetime import datetime, timezone
-from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user_id
-from app.database import get_db
+from app.database import get_db, to_db_id
 from app.models import Response as ResponseModel
 from app.models import Session
 from app.schemas import ChatAnswerRequest, ChatAnswerResponse, ChatMessage, ChatStartResponse
@@ -47,7 +46,7 @@ async def start_chat(
     ]
 
     return ChatStartResponse(
-        session_id=session.id,
+        session_id=str(session.id),
         message=_bot_message(content),
         question_key=q.key,
         options=q.options,
@@ -63,7 +62,7 @@ async def answer_question(
     db: AsyncSession = Depends(get_db),
     user_id: str | None = Depends(get_current_user_id),
 ):
-    result = await db.execute(select(Session).where(Session.id == body.session_id))
+    result = await db.execute(select(Session).where(Session.id == to_db_id(body.session_id)))
     session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -85,7 +84,7 @@ async def answer_question(
             raise HTTPException(status_code=422, detail="Age must be between 1 and 120")
 
     resp = ResponseModel(
-        session_id=session.id,
+        session_id=to_db_id(session.id),
         section=q.section,
         question_key=q.key,
         question_text=q.text,
@@ -112,7 +111,7 @@ async def answer_question(
         session.conversation_json = conv
         await db.flush()
         return ChatAnswerResponse(
-            session_id=session.id,
+            session_id=str(session.id),
             message=_bot_message(done_msg),
             progress=100.0,
             completed=True,
@@ -133,7 +132,7 @@ async def answer_question(
 
     await db.flush()
     return ChatAnswerResponse(
-        session_id=session.id,
+        session_id=str(session.id),
         message=_bot_message(content),
         question_key=next_q.key,
         options=next_q.options,
@@ -145,8 +144,8 @@ async def answer_question(
 
 
 @router.get("/session/{session_id}")
-async def get_session_conversation(session_id: UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Session).where(Session.id == session_id))
+async def get_session_conversation(session_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Session).where(Session.id == to_db_id(session_id)))
     session = result.scalar_one_or_none()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
