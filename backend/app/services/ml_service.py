@@ -138,9 +138,9 @@ def predict(features: dict[str, Any]) -> dict[str, Any]:
 
         risk_map = {"none": "low", "mild": "moderate", "moderate": "high", "severe": "critical"}
 
-            # Enforce consistency: gingivitis=True must have mild/moderate/severe severity
-            if has_gingivitis and severity == "none":
-                severity = "mild"
+        # Enforce consistency: gingivitis=True must have mild/moderate/severe severity
+        if has_gingivitis and severity == "none":
+            severity = "mild"
 
         result = {
             "has_gingivitis": has_gingivitis,
