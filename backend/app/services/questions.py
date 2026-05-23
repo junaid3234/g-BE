@@ -67,11 +67,6 @@ QUESTIONS: list[Question] = [
              ["Never", "Rarely", "Sometimes", "Often", "Always"]),
     Question("previous_gum_disease", "C", "A dentist has told me that I have gum disease / gingivitis.", "choice",
              ["Yes", "No"]),
-    # FINAL CLINICAL INPUTS
-    Question("gingival_index", "D", "Gingival Index Interpretation:", "choice",
-             ["Normal", "Mild", "Moderate", "Severe"]),
-    Question("ohi_s", "D", "OHI-S Interpretation:", "choice",
-             ["Good", "Fair", "Poor"]),
 ]
 
 QUESTION_BY_KEY = {q.key: q for q in QUESTIONS}
@@ -92,7 +87,6 @@ SECTION_INTROS = {
     "A": "Let's start with some basic information about you.",
     "B": "Great! Now I'll ask about your oral hygiene practices.",
     "C": "Thank you. Next, I'd like to understand any gingival symptoms you've experienced.",
-    "D": "Almost done! Please provide these final clinical assessment inputs.",
 }
 
 

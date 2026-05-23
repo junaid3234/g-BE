@@ -70,11 +70,11 @@ def _rule_based_predict(features: dict[str, Any]) -> dict[str, Any]:
         "swollen_gums", "red_gums", "tender_gums",
     ]
     score = sum(symptom_map.get(features.get(c, "Never"), 0) for c in symptom_cols) / max(len(symptom_cols), 1)
-    gi_map = {"Normal": 0, "Mild": 1, "Moderate": 2, "Severe": 3}
-    score += gi_map.get(features.get("gingival_index", "Normal"), 0) * 0.5
 
+    # Gingivitis: yes/no only
     has_gingivitis = score >= 1.5
-    if score < 1.0:
+    # Severity restricted to mild / moderate / severe (no "none" when gingivitis present)
+    if not has_gingivitis:
         severity = "none"
     elif score < 2.0:
         severity = "mild"
@@ -137,6 +137,11 @@ def predict(features: dict[str, Any]) -> dict[str, Any]:
         ]
 
         risk_map = {"none": "low", "mild": "moderate", "moderate": "high", "severe": "critical"}
+
+            # Enforce consistency: gingivitis=True must have mild/moderate/severe severity
+            if has_gingivitis and severity == "none":
+                severity = "mild"
+
         result = {
             "has_gingivitis": has_gingivitis,
             "confidence": confidence,
