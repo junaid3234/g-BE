@@ -7,9 +7,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import require_auth
-from app.database import get_db
-from app.models import Prediction, Session, User
+from app.database import get_db, to_db_id
+from app.models import Prediction, Response, Session, User
 from app.schemas import AnalyticsOverview
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -43,7 +42,7 @@ async def analytics_overview(
     recent = []
     for s in recent_sessions:
         pred_r = await db.execute(
-            select(Prediction).where(Prediction.session_id == s.id).order_by(Prediction.created_at.desc())
+            select(Prediction).where(Prediction.session_id == to_db_id(s.id)).order_by(Prediction.created_at.desc())
         )
         pred = pred_r.scalars().first()
         recent.append({
@@ -67,21 +66,79 @@ async def analytics_overview(
 @router.get("/export")
 async def export_csv(
     db: AsyncSession = Depends(get_db),
-    _user: str = Depends(require_auth),
-    search: str | None = Query(None),
+    search: str | None = Query(None, description="Filter by severity (e.g. 'mild', 'moderate')"),
 ):
-    preds = (await db.execute(select(Prediction).order_by(Prediction.created_at.desc()))).scalars().all()
+    """Export all screening data as CSV — no auth required for admin use."""
+    # Fetch all sessions with their predictions and responses
+    sessions = (
+        await db.execute(select(Session).order_by(Session.started_at.desc()))
+    ).scalars().all()
+
+    # Build a lookup: session_id -> list of responses keyed by question_key
+    all_responses = (await db.execute(select(Response))).scalars().all()
+    resp_map: dict[str, dict[str, str]] = {}
+    for r in all_responses:
+        sid = str(r.session_id)
+        if sid not in resp_map:
+            resp_map[sid] = {}
+        resp_map[sid][r.question_key] = r.answer_value
+
+    # Build a lookup: session_id -> latest prediction
+    all_preds = (
+        await db.execute(select(Prediction).order_by(Prediction.created_at.desc()))
+    ).scalars().all()
+    pred_map: dict[str, Prediction] = {}
+    for p in all_preds:
+        sid = str(p.session_id)
+        if sid not in pred_map:
+            pred_map[sid] = p
+
+    # Define CSV columns — prediction fields + all question keys
+    question_keys = [
+        "age", "gender", "year_of_study", "place_of_residence", "tobacco_use", "systemic_conditions",
+        "brushing_frequency", "brushing_duration", "toothbrush_type", "toothbrush_replacement",
+        "toothpaste_type", "interdental_cleaning", "mouthwash_usage", "dental_visit_frequency",
+        "self_rated_hygiene",
+        "bleeding_brushing", "bleeding_eating", "spontaneous_bleeding", "swollen_gums",
+        "red_gums", "tender_gums", "bad_breath", "others_bad_breath", "food_stuck",
+        "previous_gum_disease",
+    ]
+
+    header = [
+        "session_id", "status", "started_at", "completed_at",
+        "has_gingivitis", "severity", "confidence", "risk_level",
+    ] + question_keys
+
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["session_id", "has_gingivitis", "severity", "confidence", "risk_level", "created_at"])
-    for p in preds:
-        writer.writerow([
-            str(p.session_id), p.has_gingivitis, p.severity,
-            float(p.confidence), p.risk_level, p.created_at.isoformat(),
-        ])
+    writer.writerow(header)
+
+    for s in sessions:
+        sid = str(s.id)
+        pred = pred_map.get(sid)
+
+        # Apply severity filter if provided
+        if search and pred and pred.severity.lower() != search.lower():
+            continue
+
+        responses = resp_map.get(sid, {})
+        row = [
+            sid,
+            s.status,
+            s.started_at.isoformat() if s.started_at else "",
+            s.completed_at.isoformat() if s.completed_at else "",
+            pred.has_gingivitis if pred else "",
+            pred.severity if pred else "",
+            float(pred.confidence) if pred else "",
+            pred.risk_level if pred else "",
+        ] + [responses.get(k, "") for k in question_keys]
+
+        writer.writerow(row)
+
     output.seek(0)
+    filename = f"gingiai-screening-export-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.csv"
     return StreamingResponse(
         iter([output.getvalue()]),
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=gingiai-export.csv"},
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
